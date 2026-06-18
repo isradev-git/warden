@@ -1,9 +1,14 @@
 """Self-check fase 0. Corre con `pytest` o `python tests/test_warden.py`."""
 import json
 
+from dataclasses import asdict
+
 from warden import render
 from warden.cli import _audit_dict, _exit_code, _snap_dict
 from warden.core import report as core_report
+from warden.core import expose as core_expose
+from warden.core import scripts as core_scripts
+from warden.core import secrets as core_secrets
 from warden.core import security, system
 
 
@@ -105,6 +110,37 @@ def test_report_build_and_json():
 def test_report_md():
     md = render.report_md(core_report.build(lynis=False))
     assert "Health" in md and "Audit" in md
+
+
+def test_script_generate():
+    for n in core_scripts.NAMES:
+        g = core_scripts.generate(n)
+        assert g.content.startswith("#!/usr/bin/env bash")
+        assert "set -euo pipefail" in g.content
+        assert g.filename == f"warden-{n}.sh"
+    assert 'SRC="${1:-/data}"' in core_scripts.generate("backup", src="/data").content
+    try:
+        core_scripts.generate("nope")
+        assert False, "debería lanzar"
+    except ValueError:
+        pass
+
+
+def test_expose_shape_serializable():
+    # sin red: forma correcta y JSON-serializable, sin pegar a internet en el test.
+    exp = core_expose.Exposure(None, None, {}, core_expose._listening())
+    json.dumps(asdict(exp), default=str)
+    assert isinstance(exp.listening, list)
+
+
+def test_secrets_scan():
+    assert core_secrets._mask("abc") == "***"
+    assert core_secrets._match_line("export AWS_KEY=AKIAIOSFODNN7EXAMPLE")[0] == "AWS access key"
+    assert core_secrets._match_line("ls -la /tmp") is None
+    sc = core_secrets.scan()
+    assert set(sc.counts) == {"warn", "fail"}
+    json.dumps(asdict(sc), default=str)  # no debe lanzar
+    assert all(f.severity in ("warn", "fail") for f in sc.findings)
 
 
 if __name__ == "__main__":

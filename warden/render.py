@@ -7,6 +7,7 @@ from rich.columns import Columns
 from rich.console import Group
 from rich.live import Live
 from rich.panel import Panel
+from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
@@ -14,6 +15,9 @@ from warden.console import BG_PANEL, console
 from warden.core import system
 from warden.core import security
 from warden.core import report as core_report
+from warden.core import scripts as core_scripts
+from warden.core import expose as core_expose
+from warden.core import secrets as core_secrets
 
 LEVEL_STYLE = {"ok": "warden.ok", "warn": "warden.warn", "fail": "warden.fail", "na": "warden.na"}
 STATUS_DOT = {"ok": "●", "warn": "●", "fail": "●", "na": "○"}
@@ -316,6 +320,72 @@ def report_md(rep: core_report.FullReport) -> str:
         f"_Generado: {rep.generated_at}_", "", "---", "",
         health_md(rep.health), "", "---", "", audit_md(rep.audit),
     ])
+
+
+def print_script(gen: core_scripts.GeneratedScript) -> None:
+    syn = Syntax(gen.content, "bash", theme="ansi_dark", background_color="#15090f",
+                 word_wrap=True)
+    console.print(_panel(syn, f"script · {gen.name}  →  {gen.filename}"))
+
+
+def expose_renderable(exp: core_expose.Exposure) -> Group:
+    g = Table.grid(padding=(0, 1))
+    g.add_column(style="warden.muted", justify="right")
+    g.add_column(style="warden.value", overflow="fold")
+    g.add_row("IP pública", exp.public_ip or Text("N/A", style="warden.na"))
+    g.add_row("Reverse DNS", exp.reverse_dns or "—")
+    if exp.geo:
+        loc = ", ".join(filter(None, (exp.geo.get("city"), exp.geo.get("regionName"),
+                                      exp.geo.get("country"))))
+        g.add_row("Ubicación", loc or "—")
+        g.add_row("ISP", exp.geo.get("isp") or exp.geo.get("org") or "—")
+    if exp.error:
+        g.add_row("Aviso", Text(exp.error, style="warden.warn"))
+    top = _panel(g, "Auto-exposición")
+
+    if not exp.listening:
+        ports = _panel(Text("Nada escuchando en 0.0.0.0/:: (o sin permiso).", style="warden.ok"),
+                       "Puertos en interfaz pública")
+    else:
+        t = Table(expand=True, header_style="warden.header", box=None)
+        t.add_column("Puerto", justify="right", style="warden.warn")
+        t.add_column("Proceso", style="warden.value", ratio=1)
+        for item in exp.listening:
+            t.add_row(str(item["port"]), item["proc"] or "—")
+        ports = _panel(Group(
+            Text("Escuchando en todas las interfaces — exposición potencial, "
+                 "no alcanzabilidad confirmada.", style="warden.muted"), t),
+            f"Puertos en interfaz pública ({len(exp.listening)})")
+    return Group(top, ports)
+
+
+def print_expose(exp: core_expose.Exposure) -> None:
+    console.print(expose_renderable(exp))
+
+
+def secrets_renderable(scan: core_secrets.SecretScan) -> Panel:
+    sub = (f"env: {scan.scanned['env_vars']} vars · "
+           f"history: {scan.scanned['history_files']} · "
+           f"ficheros sensibles: {scan.scanned['sensitive_files']}")
+    if not scan.findings:
+        return _panel(Group(Text("Sin secretos expuestos detectados.", style="warden.ok"),
+                            Text(sub, style="warden.muted")), "Secret scan")
+    sev = {"fail": 0, "warn": 1}
+    t = Table(expand=True, header_style="warden.header", box=None)
+    t.add_column("", width=1)
+    t.add_column("Origen", style="warden.muted", no_wrap=True)
+    t.add_column("Ubicación", style="warden.value", overflow="fold")
+    t.add_column("Tipo", overflow="fold")
+    t.add_column("Valor", style="warden.muted", no_wrap=True)
+    for f in sorted(scan.findings, key=lambda f: sev[f.severity]):
+        t.add_row(Text(STATUS_DOT[f.severity], style=LEVEL_STYLE[f.severity]),
+                  f.source, f.location, f.kind, f.masked)
+    title = f"Secret scan — {scan.counts['fail']} fail · {scan.counts['warn']} warn"
+    return _panel(Group(t, Text(sub, style="warden.muted")), title)
+
+
+def print_secrets(scan: core_secrets.SecretScan) -> None:
+    console.print(secrets_renderable(scan))
 
 
 def print_info(si: system.SystemInfo) -> None:
