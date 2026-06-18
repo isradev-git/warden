@@ -6,6 +6,7 @@ from dataclasses import asdict
 from warden import render
 from warden.cli import _audit_dict, _exit_code, _snap_dict
 from warden.core import report as core_report
+from warden.core import cve as core_cve
 from warden.core import expose as core_expose
 from warden.core import scripts as core_scripts
 from warden.core import secrets as core_secrets
@@ -141,6 +142,18 @@ def test_secrets_scan():
     assert set(sc.counts) == {"warn", "fail"}
     json.dumps(asdict(sc), default=str)  # no debe lanzar
     assert all(f.severity in ("warn", "fail") for f in sc.findings)
+
+
+def test_cve_severity_and_shape():
+    # pure helpers + serialización; sin pegar a OSV en el test.
+    assert core_cve._severity({"database_specific": {"severity": "high"}}) == "HIGH"
+    assert core_cve._severity({"severity": [{"type": "CVSS_V3"}]}) == "CVSS"
+    assert core_cve._severity({}) == "—"
+    eco, pkgs = core_cve._collect_packages()  # local, sin red
+    assert isinstance(eco, str) and isinstance(pkgs, list)
+    rep = core_cve.CveReport("Debian", 1, [core_cve.PkgVulns(
+        "openssl", "1.1", [core_cve.Vuln("OSV-1", ["CVE-2020-1"], "x", "HIGH")])], 1)
+    json.dumps(asdict(rep), default=str)  # no debe lanzar
 
 
 if __name__ == "__main__":
