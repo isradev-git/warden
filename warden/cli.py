@@ -16,6 +16,7 @@ from warden.core import system
 from warden.core import scripts as core_scripts
 from warden.core import expose as core_expose
 from warden.core import secrets as core_secrets
+from warden.core import cve as core_cve
 
 app = typer.Typer(add_completion=False, no_args_is_help=False,
                   help="WARDEN_ — auditor de host y panel de sistemas.  >IZ::")
@@ -115,6 +116,20 @@ def scan_secrets(json_out: bool = typer.Option(False, "--json", help="Salida JSO
     else:
         render.print_secrets(sc)
     raise typer.Exit(2 if sc.counts["fail"] else 1 if sc.counts["warn"] else 0)
+
+
+@app.command()
+def cve(
+    json_out: bool = typer.Option(False, "--json", help="Salida JSON para máquina/CI."),
+    details: int = typer.Option(0, "--details", help="Enriquece N vulns con resumen/severidad (lento)."),
+):
+    """CVEs conocidas de los paquetes instalados (vía OSV.dev)."""
+    rep = core_cve.collect_cve(details=details)
+    if json_out:
+        print(json.dumps(asdict(rep), indent=2, default=str))
+    else:
+        render.print_cve(rep)
+    raise typer.Exit(1 if rep.vuln_count else 0)  # warn: el match de versión no es exacto
 
 
 @app.command()

@@ -18,6 +18,7 @@ from warden.core import report as core_report
 from warden.core import scripts as core_scripts
 from warden.core import expose as core_expose
 from warden.core import secrets as core_secrets
+from warden.core import cve as core_cve
 
 LEVEL_STYLE = {"ok": "warden.ok", "warn": "warden.warn", "fail": "warden.fail", "na": "warden.na"}
 STATUS_DOT = {"ok": "●", "warn": "●", "fail": "●", "na": "○"}
@@ -386,6 +387,42 @@ def secrets_renderable(scan: core_secrets.SecretScan) -> Panel:
 
 def print_secrets(scan: core_secrets.SecretScan) -> None:
     console.print(secrets_renderable(scan))
+
+
+_CVE_ROWS = 30  # tope de paquetes mostrados; --json da el listado completo
+
+
+def cve_renderable(rep: core_cve.CveReport) -> Panel:
+    if rep.error:
+        return _panel(Text(rep.error, style="warden.warn"), "CVE · OSV.dev")
+    sub = Text(f"ecosistema {rep.ecosystem} · {rep.pkg_count} paquetes · "
+               f"{rep.vuln_count} vulns en {len(rep.affected)} paquetes  ·  "
+               "según OSV.dev (el match de versión puede dar falsos positivos)",
+               style="warden.muted")
+    if not rep.affected:
+        return _panel(Group(Text(f"Sin CVEs conocidas en {rep.pkg_count} paquetes.",
+                                 style="warden.ok"), sub), "CVE · OSV.dev")
+    t = Table(expand=True, header_style="warden.header", box=None, pad_edge=False)
+    t.add_column("Paquete", style="warden.value", width=18, no_wrap=True, overflow="ellipsis")
+    t.add_column("Versión", style="warden.muted", width=20, no_wrap=True, overflow="ellipsis")
+    t.add_column("Vulns", justify="right", width=5, no_wrap=True)
+    t.add_column("CVEs", ratio=1, no_wrap=True, overflow="ellipsis")
+    for p in rep.affected[:_CVE_ROWS]:
+        ids = [v.aliases[0] if v.aliases else v.id for v in p.vulns]
+        sample = ", ".join(ids[:2]) + (f", +{len(ids) - 2}" if len(ids) > 2 else "")
+        cstyle = "warden.fail" if len(p.vulns) >= 10 else "warden.warn"
+        t.add_row(p.package, p.version, Text(str(len(p.vulns)), style=cstyle),
+                  Text(sample, style="warden.accent2"))
+    rows = [t]
+    if len(rep.affected) > _CVE_ROWS:
+        rows.append(Text(f"… +{len(rep.affected) - _CVE_ROWS} paquetes más  ·  "
+                         "usa --json para el listado completo", style="warden.warn"))
+    rows.append(sub)
+    return _panel(Group(*rows), f"CVE · OSV.dev ({rep.vuln_count})")
+
+
+def print_cve(rep: core_cve.CveReport) -> None:
+    console.print(cve_renderable(rep))
 
 
 def print_info(si: system.SystemInfo) -> None:

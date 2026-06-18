@@ -7,7 +7,7 @@ Diagnóstico en vivo · auditoría de seguridad · todo desde la línea de coman
 
 ![Python](https://img.shields.io/badge/python-3.11+-3dffd1?style=flat-square&logo=python&logoColor=white&labelColor=15090f)
 ![Platform](https://img.shields.io/badge/Linux-first-ff3d94?style=flat-square&logo=linux&logoColor=white&labelColor=15090f)
-![Status](https://img.shields.io/badge/estado-fase_3-ff3d94?style=flat-square&labelColor=15090f)
+![Status](https://img.shields.io/badge/estado-fase_4-ff3d94?style=flat-square&labelColor=15090f)
 ![License](https://img.shields.io/badge/licencia-MIT-3dffd1?style=flat-square&labelColor=15090f)
 
 `>IZ::` · Israel Zamora Tejero · *Glitchbane*
@@ -21,11 +21,13 @@ Diagnóstico en vivo · auditoría de seguridad · todo desde la línea de coman
 ![warden dashboard](docs/dashboard.svg)
 
 <details>
-<summary><b>Más capturas</b> — <code>warden health</code> · <code>warden audit</code> · <code>warden script</code></summary>
+<summary><b>Más capturas</b> — <code>warden health</code> · <code>warden audit</code> · <code>warden cve</code> · <code>warden script</code></summary>
 
 ![warden health](docs/health.svg)
 
 ![warden audit](docs/audit.svg)
+
+![warden cve](docs/cve.svg)
 
 ![warden script](docs/script.svg)
 
@@ -84,6 +86,10 @@ warden expose --json       # salida JSON
 warden scan-secrets        # busca secretos en env, history y ficheros sensibles
 warden scan-secrets --json # salida JSON (exit 1 si warn, 2 si fail)
 
+warden cve                 # CVEs conocidas de paquetes instalados (vía OSV.dev)
+warden cve --json          # listado completo en JSON
+warden cve --details 20    # enriquece 20 vulns con resumen/severidad (lento)
+
 warden script backup --src /datos --dest /backup   # genera el script (NO lo ejecuta)
 warden script cleanup -o limpiar.sh                # lo escribe a fichero
 warden script update                               # lo muestra resaltado en pantalla
@@ -109,6 +115,7 @@ que `warden audit --fail-on warn` es usable directamente en un pipeline de CI.
 | OSINT: self-exposure (IP pública, geoloc, reverse DNS, puertos públicos) | ✅ |
 | Secret leak scan (env, history, ficheros world-readable) | ✅ |
 | Generación de scripts (backup / cleanup / update, solo genera) | ✅ |
+| CVE de paquetes instalados vía OSV.dev (`cve`) | ✅ |
 
 ## Arquitectura
 
@@ -124,6 +131,7 @@ warden/
     scripts.py         #   genera scripts bash (backup/cleanup/update), NO ejecuta
     expose.py          #   OSINT self-exposure (IP pública, geoloc, puertos)
     secrets.py         #   secret leak scan (env, history, ficheros sensibles)
+    cve.py             #   CVE de paquetes instalados vía OSV.dev (urllib)
   render.py            # render rich de los datos
 ```
 
@@ -148,7 +156,7 @@ python tests/test_warden.py     # self-check (o: pytest)
 - **Fase 1** — `audit`: checks propios + wrapper de Lynis + hardening score. ✅
 - **Fase 2** — `report` combinado (JSON/MD) + dashboard de resumen. ✅
 - **Fase 3** — `script` (generación) + OSINT (`expose`, `scan-secrets`). ✅
-- **Fase 4** — 2.º SO, ejecución/programación de scripts, histórico, CVE (OSV), binario `pyinstaller`, TUI.
+- **Fase 4** — CVE de paquetes vía OSV.dev (`cve`). ✅ · *pendiente (opcional):* histórico/tendencias, binario `pyinstaller`, TUI, 2.º SO.
 
 ---
 
