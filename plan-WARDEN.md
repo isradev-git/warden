@@ -68,7 +68,7 @@ warden/
     core/
       system.py          # collectors psutil -> dataclasses
       security.py        # envuelve lynis + checks propios -> CheckResult (OK/WARN/FAIL/NA)
-      scripts.py         # render plantillas Jinja -> texto (NO ejecuta)
+      scripts.py         # genera scripts bash (cuerpo estático + cabecera) -> texto (NO ejecuta)
       report.py          # dataclasses -> JSON / Markdown
     render.py            # render rich de los datos (tablas, dashboard)
     templates/           # *.sh.j2
@@ -125,7 +125,7 @@ Si Lynis no está → solo checks propios, y se indica en el report que la cober
 
 ### 6.3. Scripts (solo generación)
 
-Plantillas Jinja2 → bash. Flujo: **generar → mostrar en pantalla** (resaltado). Con `-o` se escribe a fichero. **WARDEN no ejecuta ni programa nada** — el usuario revisa y corre lo que quiera.
+Scripts bash con cuerpo estático + cabecera de variables inyectada (sin motor de plantillas: Jinja2 sería sobreingeniería para tres scripts, y las llaves de bash chocan con `str.format`; se reconsidera si crecen). Flujo: **generar → mostrar en pantalla** (resaltado). Con `-o` se escribe a fichero. **WARDEN no ejecuta ni programa nada** — el usuario revisa y corre lo que quiera. El `update`/`cleanup` detectan el gestor de paquetes en tiempo de ejecución (bash), no al generar.
 
 Plantillas iniciales: `backup` (rsync/tar src→dest), `cleanup` (cachés, logs viejos, paquetes huérfanos), `update` (gestor de paquetes detectado).
 
@@ -167,16 +167,16 @@ Tras los recortes, el riesgo grande (ejecutar/programar) desaparece. Queda:
 | **Fase 0** ✅ | Esqueleto del paquete + CLI base + tema Glitchbane + `health` / `info` (Linux) + detección de root + `--json`/`--md` + README + SVGs. *Hecho y verificado.* |
 | **Fase 1** ✅ | `security.py`: checks propios ligeros + wrapper de Lynis (`--lynis`) + comando `audit` + códigos de salida `0/1/2` + `--fail-on` + **hardening score 0-100 + grade A-F**. *Hecho y verificado.* |
 | **Fase 2** ✅ | `core/report.py` (combina health + audit) + comando `report` (JSON/MD versionado) + `warden` sin-args = dashboard de resumen (score + vitales + incidencias). *Hecho y verificado.* |
-| **Fase 3** | `scripts.py`: generación + plantillas backup/cleanup/update. **OSINT:** `expose` (IP pública + geoloc + reverse DNS + puertos en iface pública) + secret leak scan (env, history, ficheros world-readable). |
+| **Fase 3** ✅ | `scripts.py`: generación de backup/cleanup/update (solo genera, no ejecuta). **OSINT:** `expose` (IP pública + geoloc + reverse DNS + puertos en iface pública) + `scan-secrets` (env, history, ficheros world-readable). *Hecho y verificado.* |
 | **Fase 4** *(opcional, lo recortado)* | 2.º SO (macOS/Windows, degradando), ejecución/programación de scripts, histórico/tendencias, **CVE de paquetes (OSV.dev)**, binario `pyinstaller`, TUI Textual, config TOML. |
 
 ---
 
 ## 10. Stack
 
-**Base:** `python>=3.11`, `psutil`, `rich`, `typer`, `jinja2`, `distro`.
+**Base:** `python>=3.11`, `psutil`, `rich`, `typer`, `distro`. OSINT vía `urllib` (stdlib). Scripts sin `jinja2` (cuerpo estático).
 
-Nada más por ahora. `tomllib` (config), `wmi`/`pywin32` (Windows), `croniter` (cron) → solo cuando la fase 4 los pida.
+Nada más por ahora. `jinja2` (si los scripts se complican), `tomllib` (config), `wmi`/`pywin32` (Windows), `croniter` (cron) → solo cuando hagan falta.
 
 ---
 

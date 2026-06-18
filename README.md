@@ -7,7 +7,7 @@ Diagnóstico en vivo · auditoría de seguridad · todo desde la línea de coman
 
 ![Python](https://img.shields.io/badge/python-3.11+-3dffd1?style=flat-square&logo=python&logoColor=white&labelColor=15090f)
 ![Platform](https://img.shields.io/badge/Linux-first-ff3d94?style=flat-square&logo=linux&logoColor=white&labelColor=15090f)
-![Status](https://img.shields.io/badge/estado-fase_2-ff3d94?style=flat-square&labelColor=15090f)
+![Status](https://img.shields.io/badge/estado-fase_3-ff3d94?style=flat-square&labelColor=15090f)
 ![License](https://img.shields.io/badge/licencia-MIT-3dffd1?style=flat-square&labelColor=15090f)
 
 `>IZ::` · Israel Zamora Tejero · *Glitchbane*
@@ -21,11 +21,13 @@ Diagnóstico en vivo · auditoría de seguridad · todo desde la línea de coman
 ![warden dashboard](docs/dashboard.svg)
 
 <details>
-<summary><b>Más capturas</b> — <code>warden health</code> · <code>warden audit</code></summary>
+<summary><b>Más capturas</b> — <code>warden health</code> · <code>warden audit</code> · <code>warden script</code></summary>
 
 ![warden health](docs/health.svg)
 
 ![warden audit](docs/audit.svg)
+
+![warden script](docs/script.svg)
 
 </details>
 
@@ -75,6 +77,16 @@ warden audit --lynis       # fuerza un run fresco de Lynis (lento, mejor con roo
 warden report              # informe combinado health + audit (= dashboard)
 warden report --json       # un único JSON versionado con health + audit
 warden report --md         # informe Markdown completo para tu vault
+
+warden expose              # OSINT: IP pública, geoloc, reverse DNS, puertos públicos
+warden expose --json       # salida JSON
+
+warden scan-secrets        # busca secretos en env, history y ficheros sensibles
+warden scan-secrets --json # salida JSON (exit 1 si warn, 2 si fail)
+
+warden script backup --src /datos --dest /backup   # genera el script (NO lo ejecuta)
+warden script cleanup -o limpiar.sh                # lo escribe a fichero
+warden script update                               # lo muestra resaltado en pantalla
 ```
 
 Los comandos respetan **códigos de salida** (`0` ok · `1` warn · `2` fail), así
@@ -94,9 +106,9 @@ que `warden audit --fail-on warn` es usable directamente en un pipeline de CI.
 | Códigos de salida `0/1/2` + `--fail-on` para CI | ✅ |
 | Dashboard de resumen (`warden` sin args): score + vitales + incidencias | ✅ |
 | Informe combinado health + audit (`report`, JSON/Markdown versionado) | ✅ |
-| OSINT: self-exposure (IP pública, geoloc, puertos expuestos) | 🔜 fase 3 |
-| Secret leak scan (env, history, ficheros world-readable) | 🔜 fase 3 |
-| Generación de scripts (backup / cleanup / update) | 🔜 fase 3 |
+| OSINT: self-exposure (IP pública, geoloc, reverse DNS, puertos públicos) | ✅ |
+| Secret leak scan (env, history, ficheros world-readable) | ✅ |
+| Generación de scripts (backup / cleanup / update, solo genera) | ✅ |
 
 ## Arquitectura
 
@@ -109,6 +121,9 @@ warden/
     system.py          #   collectors psutil -> dataclasses
     security.py        #   checks propios + Lynis -> CheckResult + score
     report.py          #   combina health + audit -> dataclass + JSON
+    scripts.py         #   genera scripts bash (backup/cleanup/update), NO ejecuta
+    expose.py          #   OSINT self-exposure (IP pública, geoloc, puertos)
+    secrets.py         #   secret leak scan (env, history, ficheros sensibles)
   render.py            # render rich de los datos
 ```
 
@@ -132,7 +147,7 @@ python tests/test_warden.py     # self-check (o: pytest)
 - **Fase 0** — diagnóstico (`health`/`info`), tema, privilegios. ✅
 - **Fase 1** — `audit`: checks propios + wrapper de Lynis + hardening score. ✅
 - **Fase 2** — `report` combinado (JSON/MD) + dashboard de resumen. ✅
-- **Fase 3** — `script` (generación) + OSINT (`expose`, leak scan).
+- **Fase 3** — `script` (generación) + OSINT (`expose`, `scan-secrets`). ✅
 - **Fase 4** — 2.º SO, ejecución/programación de scripts, histórico, CVE (OSV), binario `pyinstaller`, TUI.
 
 ---

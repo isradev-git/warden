@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
+from pathlib import Path
+from typing import Optional
 
 import typer
 
@@ -11,6 +13,9 @@ from warden import render
 from warden.core import report as core_report
 from warden.core import security
 from warden.core import system
+from warden.core import scripts as core_scripts
+from warden.core import expose as core_expose
+from warden.core import secrets as core_secrets
 
 app = typer.Typer(add_completion=False, no_args_is_help=False,
                   help="WARDEN_ — auditor de host y panel de sistemas.  >IZ::")
@@ -70,6 +75,46 @@ def report(
         print(render.report_md(rep))
     else:
         render.print_summary(rep)
+
+
+@app.command()
+def script(
+    name: str = typer.Argument(..., help="Script a generar: backup | cleanup | update."),
+    src: Optional[str] = typer.Option(None, "--src", help="(backup) ruta origen."),
+    dest: Optional[str] = typer.Option(None, "--dest", help="(backup) ruta destino."),
+    out: Optional[str] = typer.Option(None, "-o", "--out", help="Escribe a fichero en vez de mostrar."),
+):
+    """Genera y muestra un script bash. NO lo ejecuta."""
+    try:
+        gen = core_scripts.generate(name, src=src, dest=dest)
+    except ValueError as e:
+        raise typer.BadParameter(str(e))
+    if out:
+        Path(out).write_text(gen.content, encoding="utf-8")
+        typer.echo(f"Escrito en {out}  (revísalo antes de ejecutar: chmod +x {out} && ./{out})", err=True)
+    else:
+        render.print_script(gen)
+
+
+@app.command()
+def expose(json_out: bool = typer.Option(False, "--json", help="Salida JSON para máquina/CI.")):
+    """OSINT de auto-exposición: IP pública, geoloc, reverse DNS, puertos públicos."""
+    exp = core_expose.collect_exposure()
+    if json_out:
+        print(json.dumps(asdict(exp), indent=2, default=str))
+    else:
+        render.print_expose(exp)
+
+
+@app.command(name="scan-secrets")
+def scan_secrets(json_out: bool = typer.Option(False, "--json", help="Salida JSON para máquina/CI.")):
+    """Busca secretos expuestos en env, history y ficheros sensibles."""
+    sc = core_secrets.scan()
+    if json_out:
+        print(json.dumps(asdict(sc), indent=2, default=str))
+    else:
+        render.print_secrets(sc)
+    raise typer.Exit(2 if sc.counts["fail"] else 1 if sc.counts["warn"] else 0)
 
 
 @app.command()
