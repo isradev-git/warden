@@ -166,7 +166,7 @@ Tras los recortes, el riesgo grande (ejecutar/programar) desaparece. Queda:
 |---|---|
 | **Fase 0** ✅ | Esqueleto del paquete + CLI base + tema Glitchbane + `health` / `info` (Linux) + detección de root + `--json`/`--md` + README + SVGs. *Hecho y verificado.* |
 | **Fase 1** ✅ | `security.py`: checks propios ligeros + wrapper de Lynis (`--lynis`) + comando `audit` + códigos de salida `0/1/2` + `--fail-on` + **hardening score 0-100 + grade A-F**. *Hecho y verificado.* |
-| **Fase 2** | `report.py` + comando `report` (JSON/MD, versionado) + `warden` sin-args = dashboard de resumen. |
+| **Fase 2** ✅ | `core/report.py` (combina health + audit) + comando `report` (JSON/MD versionado) + `warden` sin-args = dashboard de resumen (score + vitales + incidencias). *Hecho y verificado.* |
 | **Fase 3** | `scripts.py`: generación + plantillas backup/cleanup/update. **OSINT:** `expose` (IP pública + geoloc + reverse DNS + puertos en iface pública) + secret leak scan (env, history, ficheros world-readable). |
 | **Fase 4** *(opcional, lo recortado)* | 2.º SO (macOS/Windows, degradando), ejecución/programación de scripts, histórico/tendencias, **CVE de paquetes (OSV.dev)**, binario `pyinstaller`, TUI Textual, config TOML. |
 

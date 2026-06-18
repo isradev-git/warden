@@ -3,6 +3,7 @@ import json
 
 from warden import render
 from warden.cli import _audit_dict, _exit_code, _snap_dict
+from warden.core import report as core_report
 from warden.core import security, system
 
 
@@ -90,6 +91,20 @@ def test_audit_json_serializable():
     json.dumps(d, default=str)  # no debe lanzar
     assert d["schema_version"] == "1"
     assert "checks" in d["data"]
+
+
+def test_report_build_and_json():
+    rep = core_report.build(lynis=False)
+    d = core_report.to_dict(rep)
+    json.dumps(d, default=str)  # no debe lanzar
+    assert d["schema_version"] and d["generated_at"]
+    assert "health" in d and "audit" in d
+    assert rep.generated_at
+
+
+def test_report_md():
+    md = render.report_md(core_report.build(lynis=False))
+    assert "Health" in md and "Audit" in md
 
 
 if __name__ == "__main__":

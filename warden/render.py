@@ -13,6 +13,7 @@ from rich.text import Text
 from warden.console import BG_PANEL, console
 from warden.core import system
 from warden.core import security
+from warden.core import report as core_report
 
 LEVEL_STYLE = {"ok": "warden.ok", "warn": "warden.warn", "fail": "warden.fail", "na": "warden.na"}
 STATUS_DOT = {"ok": "●", "warn": "●", "fail": "●", "na": "○"}
@@ -208,22 +209,23 @@ def score_bar(score, width: int = 28) -> Text:
 
 def _counts_line(counts: dict) -> Text:
     t = Text()
-    for st, label in (("ok", "ok"), ("warn", "warn"), ("fail", "fail"), ("na", "n/a")):
-        t.append(f"  {STATUS_DOT[st]} {counts.get(st, 0)} {label}", style=LEVEL_STYLE[st])
+    for i, (st, label) in enumerate((("ok", "ok"), ("warn", "warn"), ("fail", "fail"), ("na", "na"))):
+        sep = "" if i == 0 else " "
+        t.append(f"{sep}{STATUS_DOT[st]} {counts.get(st, 0)} {label}", style=LEVEL_STYLE[st])
     return t
 
 
-def _score_panel(rep: security.AuditReport) -> Panel:
+def _score_panel(rep: security.AuditReport, bar_width: int = 28) -> Panel:
     gstyle = GRADE_STYLE.get(rep.grade, "warden.na")
-    g = Table.grid(padding=(0, 3))
-    g.add_column(justify="center")
-    g.add_column()
-    grade = Text(f" {rep.grade} ", style=f"bold reverse {gstyle}")
-    right = Group(score_bar(rep.score), _counts_line(rep.counts))
-    g.add_row(grade, right)
-    priv = "root" if rep.is_root else "usuario (cobertura parcial)"
-    title = f"Hardening · {priv}" + ("  · Lynis" if rep.lynis_used else "")
-    return _panel(g, title)
+    line1 = Text()
+    line1.append(f" {rep.grade} ", style=f"bold reverse {gstyle}")
+    line1.append("  ")
+    line1.append_text(score_bar(rep.score, bar_width))
+    rows = [line1, _counts_line(rep.counts)]
+    if not rep.is_root:
+        rows.append(Text("cobertura parcial — sin root", style="warden.muted"))
+    title = "Hardening" + ("  · Lynis" if rep.lynis_used else "")
+    return _panel(Group(*rows), title)
 
 
 def _checks_table(checks: list[security.CheckResult]) -> Panel:
@@ -262,6 +264,58 @@ def audit_md(rep: security.AuditReport) -> str:
         L.append(f"| {STATUS_DOT[c.status]} | {c.name} | {c.status.upper()} | "
                  f"{c.detail or '—'} | {c.recommendation or '—'} |")
     return "\n".join(L)
+
+
+def _vitals_panel(snap: system.HealthSnapshot) -> Panel:
+    g = Table.grid(padding=(0, 1))
+    g.add_column(style="warden.muted", justify="right")
+    g.add_column(ratio=1)
+    g.add_row("cpu", pct_bar(snap.cpu.percent, 16))
+    g.add_row("ram", pct_bar(snap.mem.percent, 16))
+    if snap.mem.swap_total:
+        g.add_row("swap", pct_bar(snap.mem.swap_percent, 16))
+    worst = max(snap.disks, key=lambda d: d.percent, default=None)
+    if worst:
+        g.add_row(f"disco {worst.mountpoint}", pct_bar(worst.percent, 16))
+    if snap.cpu.load_avg:
+        la = snap.cpu.load_avg
+        g.add_row("load", Text(f"{la[0]:.2f}  {la[1]:.2f}  {la[2]:.2f}", style="warden.value"))
+    return _panel(g, "Vitales")
+
+
+def _issues_panel(audit: security.AuditReport) -> Panel:
+    issues = [c for c in audit.checks if c.status in ("warn", "fail")]
+    if not issues:
+        return _panel(Text("Sin incidencias.", style="warden.ok"), "Incidencias")
+    order = {"fail": 0, "warn": 1}
+    t = Table.grid(padding=(0, 1))
+    t.add_column(width=1)
+    t.add_column(style="warden.value", no_wrap=True)
+    t.add_column(ratio=1, overflow="fold")
+    for c in sorted(issues, key=lambda c: order[c.status]):
+        t.add_row(Text(STATUS_DOT[c.status], style=LEVEL_STYLE[c.status]), c.name,
+                  Text(c.recommendation or c.detail, style="warden.muted"))
+    return _panel(t, f"Incidencias ({len(issues)})")
+
+
+def summary_renderable(rep: core_report.FullReport) -> Group:
+    top = Table.grid(expand=True, padding=(0, 1))  # grid fuerza mitad y mitad; Columns no encajaba a 80 col
+    top.add_column(ratio=1)
+    top.add_column(ratio=1)
+    top.add_row(_score_panel(rep.audit, bar_width=18), _vitals_panel(rep.health))
+    return Group(_header(rep.health), top, _issues_panel(rep.audit))
+
+
+def print_summary(rep: core_report.FullReport) -> None:
+    console.print(summary_renderable(rep))
+
+
+def report_md(rep: core_report.FullReport) -> str:
+    return "\n".join([
+        f"# WARDEN_ — Report · {rep.health.system.hostname}",
+        f"_Generado: {rep.generated_at}_", "", "---", "",
+        health_md(rep.health), "", "---", "", audit_md(rep.audit),
+    ])
 
 
 def print_info(si: system.SystemInfo) -> None:
