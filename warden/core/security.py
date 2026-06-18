@@ -5,6 +5,7 @@ core: sin rich/typer, solo datos. Ningún check revienta; lo no determinable
 """
 from __future__ import annotations
 
+import datetime
 import os
 import re
 import shutil
@@ -235,13 +236,36 @@ def _check_listening() -> CheckResult:
                        "Limita binds a 127.0.0.1 o protege con cortafuegos.", w)
 
 
-# --- Lynis (opcional, --lynis) ----------------------------------------------
+# --- Lynis (híbrido) ---------------------------------------------------------
+# Lynis está pensado para correr por cron y dejar su report en disco. Por eso:
+# auto-parseamos el report si existe (gratis), y --lynis fuerza un run fresco
+# (lento, 1-3 min, mejor con root). Nunca bloqueamos el audit por defecto.
 
-def _lynis_checks() -> list[CheckResult]:
-    if not shutil.which("lynis"):
-        return [_na("lynis", "Lynis", "Lynis no instalado.", 3)]
-    _run(["lynis", "audit", "system", "--quiet", "--no-colors"], timeout=600)  # lento, a propósito
-    txt = _read("/var/log/lynis-report.dat") or ""
+LYNIS_REPORT = "/var/log/lynis-report.dat"
+
+
+def _lynis_report_age_days(txt: str) -> int | None:
+    m = (re.search(r"(?m)^report_datetime_end=(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", txt)
+         or re.search(r"(?m)^report_datetime_start=(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", txt))
+    if not m:
+        return None
+    try:
+        dt = datetime.datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
+        return max(0, (datetime.datetime.now() - dt).days)
+    except Exception:
+        return None
+
+
+def _lynis_checks(force_run: bool) -> list[CheckResult]:
+    if force_run and shutil.which("lynis"):
+        _run(["lynis", "audit", "system", "--quiet", "--no-colors"], timeout=600)  # lento, a propósito
+    txt = _read(LYNIS_REPORT)
+    if not txt:
+        if force_run:
+            return [_na("lynis", "Lynis", "Sin report legible (¿lynis instalado? ¿root?).", 3)]
+        return []  # auto: sin report, no ensuciamos el audit
+    age = _lynis_report_age_days(txt)
+    age_s = f" (report de hace {age}d)" if age is not None else ""
     warns = re.findall(r"(?m)^warning\[\]=(.+)$", txt)
     sugg = re.findall(r"(?m)^suggestion\[\]=(.+)$", txt)
     idx = re.search(r"(?m)^hardening_index=(\d+)", txt)
@@ -249,7 +273,9 @@ def _lynis_checks() -> list[CheckResult]:
     if idx:
         hi = int(idx.group(1))
         st = OK if hi >= 80 else WARN if hi >= 60 else FAIL
-        out.append(CheckResult("lynis_index", "Lynis hardening index", st, f"{hi}/100", weight=3))
+        if age is not None and age > 30 and st == OK:
+            st = WARN  # report viejo: no te fíes del OK
+        out.append(CheckResult("lynis_index", "Lynis hardening index", st, f"{hi}/100{age_s}", weight=3))
     if warns:
         first = warns[0].split("|")[1] if "|" in warns[0] else warns[0]
         out.append(CheckResult("lynis_warn", "Lynis warnings", WARN,
@@ -257,7 +283,7 @@ def _lynis_checks() -> list[CheckResult]:
     if sugg:
         out.append(CheckResult("lynis_sugg", "Lynis suggestions",
                                WARN if len(sugg) > 10 else OK, f"{len(sugg)} sugerencias."))
-    return out or [_na("lynis", "Lynis", "Sin datos en lynis-report.dat.", 3)]
+    return out or [_na("lynis", "Lynis", f"Report sin métricas reconocibles{age_s}.", 3)]
 
 
 # --- scoring + ejecución -----------------------------------------------------
@@ -294,9 +320,9 @@ def run_audit(lynis: bool = False) -> AuditReport:
         _check_disk_encryption(),
         _check_listening(),
     ]
-    if lynis:
-        checks += _lynis_checks()
+    checks += _lynis_checks(force_run=lynis)  # auto-parsea report; --lynis fuerza run
+    lynis_used = any(c.id.startswith("lynis") and c.status != NA for c in checks)
     score, den = _score(checks)
     grade = _grade(score) if den else "—"
     counts = {s: sum(1 for c in checks if c.status == s) for s in (OK, WARN, FAIL, NA)}
-    return AuditReport(checks, score, grade, _worst(checks), counts, is_root(), lynis)
+    return AuditReport(checks, score, grade, _worst(checks), counts, is_root(), lynis_used)

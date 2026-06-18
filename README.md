@@ -63,7 +63,7 @@ warden audit               # auditoría de seguridad + hardening score 0-100
 warden audit --json        # salida JSON versionada (para CI)
 warden audit --md          # salida Markdown
 warden audit --fail-on fail # en CI: solo los FAIL devuelven código !=0
-warden audit --lynis       # ejecuta también Lynis (lento, mejor con root)
+warden audit --lynis       # fuerza un run fresco de Lynis (lento, mejor con root)
 ```
 
 Los comandos respetan **códigos de salida** (`0` ok · `1` warn · `2` fail), así
