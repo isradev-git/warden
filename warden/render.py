@@ -1,0 +1,229 @@
+"""Render rich de los datos. Toda la presentación vive aquí; core no sabe de rich."""
+from __future__ import annotations
+
+import time
+
+from rich.columns import Columns
+from rich.console import Group
+from rich.live import Live
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+
+from warden.console import BG_PANEL, console
+from warden.core import system
+
+LEVEL_STYLE = {"ok": "warden.ok", "warn": "warden.warn", "fail": "warden.fail", "na": "warden.na"}
+
+
+def human_bytes(n) -> str:
+    if n is None:
+        return "N/A"
+    n = float(n)
+    for unit in ("B", "KB", "MB", "GB", "TB", "PB"):
+        if abs(n) < 1024 or unit == "PB":
+            return f"{int(n)} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+
+
+def human_duration(s) -> str:
+    if s is None:
+        return "N/A"
+    s = int(s)
+    d, s = divmod(s, 86400)
+    h, s = divmod(s, 3600)
+    m, s = divmod(s, 60)
+    parts = []
+    if d:
+        parts.append(f"{d}d")
+    if h:
+        parts.append(f"{h}h")
+    if m:
+        parts.append(f"{m}m")
+    parts.append(f"{s}s")
+    return " ".join(parts)
+
+
+def pct_status(p) -> str:
+    if p is None:
+        return "na"
+    if p < 70:
+        return "ok"
+    if p < 90:
+        return "warn"
+    return "fail"
+
+
+def _fmt_pct(p) -> str:
+    return "N/A" if p is None else f"{p:.1f}%"
+
+
+def pct_bar(percent, width: int = 22) -> Text:
+    if percent is None:
+        return Text("N/A", style="warden.na")
+    lvl = LEVEL_STYLE[pct_status(percent)]
+    filled = round(percent / 100 * width)
+    t = Text()
+    t.append("█" * filled, style=lvl)
+    t.append("░" * (width - filled), style="warden.muted")
+    t.append(f" {percent:5.1f}%", style=lvl)
+    return t
+
+
+def _panel(body, title):
+    return Panel(body, title=Text(title, style="warden.header"), title_align="left",
+                 border_style="warden.accent", style=BG_PANEL)
+
+
+def _header(snap: system.HealthSnapshot) -> Panel:
+    si = snap.system
+    left = Text.assemble(
+        ("WARDEN", "warden.brand"), ("_", "warden.accent2"),
+        (f"  {si.hostname} · {si.distro or si.os} · up {human_duration(si.uptime)}", "warden.muted"),
+    )
+    badge = (Text(" ROOT ", style="bold #0d0d12 on #3dff94") if snap.is_root
+             else Text(" SIN PRIVILEGIOS ", style="bold #0d0d12 on #ffcc3d"))
+    g = Table.grid(expand=True)
+    g.add_column(justify="left", ratio=1, no_wrap=True, overflow="ellipsis")  # subtítulo se recorta, no envuelve
+    g.add_column(justify="right")
+    g.add_row(left, badge)
+    return Panel(g, border_style="warden.accent", style=BG_PANEL)
+
+
+def _cpu_panel(c: system.CpuInfo) -> Panel:
+    g = Table.grid(padding=(0, 1))
+    g.add_column(style="warden.muted", justify="right")
+    g.add_column()
+    g.add_row("uso", pct_bar(c.percent))
+    if c.load_avg:
+        g.add_row("load", Text(f"{c.load_avg[0]:.2f}  {c.load_avg[1]:.2f}  {c.load_avg[2]:.2f}",
+                               style="warden.value"))
+    cores = f"{c.cores_physical}/{c.cores_logical}" if c.cores_logical else "N/A"
+    g.add_row("cores", Text(f"{cores} fís/lóg", style="warden.value"))
+    if c.freq_mhz:
+        g.add_row("freq", Text(f"{c.freq_mhz:.0f} MHz", style="warden.value"))
+    return _panel(g, "CPU")
+
+
+def _mem_panel(m: system.MemInfo) -> Panel:
+    g = Table.grid(padding=(0, 1))
+    g.add_column(style="warden.muted", justify="right")
+    g.add_column()
+    g.add_row("ram", pct_bar(m.percent))
+    g.add_row("", Text(f"{human_bytes(m.used)} / {human_bytes(m.total)}", style="warden.value"))
+    g.add_row("swap", pct_bar(m.swap_percent))
+    g.add_row("", Text(f"{human_bytes(m.swap_used)} / {human_bytes(m.swap_total)}", style="warden.value"))
+    return _panel(g, "Memoria")
+
+
+def _disks_table(disks: list[system.DiskInfo]) -> Panel:
+    t = Table(expand=True, header_style="warden.header", border_style="warden.accent", box=None)
+    t.add_column("Montaje", style="warden.value")
+    t.add_column("FS", style="warden.muted")
+    t.add_column("Tamaño", justify="right", style="warden.muted")
+    t.add_column("Uso", ratio=1)
+    if not disks:
+        t.add_row("N/A", "", "", Text("sin discos legibles", style="warden.na"))
+    for d in disks:
+        t.add_row(d.mountpoint, d.fstype, human_bytes(d.total), pct_bar(d.percent))
+    return _panel(t, "Discos")
+
+
+def _net_panel(net: system.NetInfo) -> Panel:
+    g = Table.grid(padding=(0, 1))
+    g.add_column(style="warden.muted", justify="right")
+    g.add_column(style="warden.value")
+    g.add_row("↑ enviado", human_bytes(net.bytes_sent))
+    g.add_row("↓ recibido", human_bytes(net.bytes_recv))
+    up = [i for i in net.ifaces if i.isup and i.addresses]
+    for i in up[:4]:
+        g.add_row(i.name, ", ".join(i.addresses[:2]))
+    return _panel(g, "Red")
+
+
+def _temps_panel(temps: list[system.TempInfo]) -> Panel:
+    if not temps:
+        return _panel(Text("N/A — sin sensores legibles", style="warden.na"), "Temperaturas")
+    g = Table.grid(padding=(0, 1))
+    g.add_column(style="warden.muted")
+    g.add_column(justify="right")
+    for t in temps[:8]:
+        lvl = "fail" if t.critical and t.current >= t.critical else (
+            "warn" if t.high and t.current >= t.high else "ok")
+        g.add_row(t.label, Text(f"{t.current:.0f}°C", style=LEVEL_STYLE[lvl]))
+    return _panel(g, "Temperaturas")
+
+
+def _procs_table(procs: list[system.ProcInfo]) -> Panel:
+    t = Table(expand=True, header_style="warden.header", border_style="warden.accent", box=None)
+    t.add_column("PID", justify="right", style="warden.muted")
+    t.add_column("Proceso", style="warden.value")
+    t.add_column("CPU%", justify="right")
+    t.add_column("MEM%", justify="right")
+    for p in procs:
+        t.add_row(str(p.pid), p.name, f"{p.cpu:.1f}", f"{p.mem:.1f}")
+    return _panel(t, "Top procesos")
+
+
+def health_renderable(snap: system.HealthSnapshot) -> Group:
+    return Group(
+        _header(snap),
+        Columns([_cpu_panel(snap.cpu), _mem_panel(snap.mem)], equal=True, expand=True),
+        _disks_table(snap.disks),
+        Columns([_net_panel(snap.net), _temps_panel(snap.temps)], equal=True, expand=True),
+        _procs_table(snap.procs),
+    )
+
+
+def print_health(snap: system.HealthSnapshot) -> None:
+    console.print(health_renderable(snap))
+
+
+def watch_health() -> None:
+    system.collect_cpu(None)  # primer muestreo para que cpu_percent tenga delta
+    try:
+        with Live(console=console, screen=True, auto_refresh=False) as live:
+            while True:
+                live.update(health_renderable(system.collect_health(cpu_interval=None)))
+                live.refresh()
+                time.sleep(2)
+    except KeyboardInterrupt:
+        pass
+
+
+def print_info(si: system.SystemInfo) -> None:
+    g = Table.grid(padding=(0, 2))
+    g.add_column(style="warden.muted", justify="right")
+    g.add_column(style="warden.value")
+    rows = [
+        ("SO", si.os), ("Distro", si.distro or "—"), ("Kernel", si.kernel),
+        ("Host", si.hostname), ("Arquitectura", si.arch), ("Python", si.python),
+        ("Uptime", human_duration(si.uptime)),
+    ]
+    for k, v in rows:
+        g.add_row(k, str(v))
+    console.print(_panel(g, "Información del sistema"))
+
+
+def health_md(snap: system.HealthSnapshot) -> str:
+    si, c, m = snap.system, snap.cpu, snap.mem
+    L = [
+        f"# WARDEN_ — Health · {si.hostname}", "",
+        f"- **SO:** {si.distro or si.os}",
+        f"- **Kernel:** {si.kernel}",
+        f"- **Uptime:** {human_duration(si.uptime)}",
+        f"- **Privilegios:** {'root' if snap.is_root else 'usuario'}", "",
+        "## CPU", "",
+        f"- Uso: {_fmt_pct(c.percent)} · Cores: {c.cores_physical}/{c.cores_logical}"
+        + (f" · Load: {c.load_avg[0]:.2f} {c.load_avg[1]:.2f} {c.load_avg[2]:.2f}" if c.load_avg else ""),
+        "", "## Memoria", "",
+        f"- RAM: {human_bytes(m.used)} / {human_bytes(m.total)} ({_fmt_pct(m.percent)})",
+        f"- Swap: {human_bytes(m.swap_used)} / {human_bytes(m.swap_total)} ({_fmt_pct(m.swap_percent)})",
+        "", "## Discos", "", "| Montaje | FS | Tamaño | Uso |", "|---|---|---|---|",
+    ]
+    for d in snap.disks:
+        L.append(f"| {d.mountpoint} | {d.fstype} | {human_bytes(d.total)} | {_fmt_pct(d.percent)} |")
+    L += ["", "## Top procesos", "", "| PID | Proceso | CPU% | MEM% |", "|---|---|---|---|"]
+    for p in snap.procs:
+        L.append(f"| {p.pid} | {p.name} | {p.cpu:.1f} | {p.mem:.1f} |")
+    return "\n".join(L)
