@@ -70,6 +70,13 @@ def test_worst_and_exit_code():
     assert _exit_code("fail", "fail") == 2
 
 
+def test_lynis_age_parser():
+    txt = "report_datetime_end=2020-01-01 00:00:00\nhardening_index=70\n"
+    age = security._lynis_report_age_days(txt)
+    assert age is not None and age > 1000
+    assert security._lynis_report_age_days("basura sin fecha") is None
+
+
 def test_run_audit_no_crash():
     rep = security.run_audit(lynis=False)
     assert 0 <= rep.score <= 100

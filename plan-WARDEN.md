@@ -112,7 +112,7 @@ Si un dato no existe (sin sensor, sin permiso) → `N/A`, nunca crash.
 
 `security.py` produce una lista de `CheckResult` (estado `OK / WARN / FAIL / N-A` + recomendación), de dos fuentes:
 
-1. **Lynis si está instalado:** corre `lynis audit system --quiet`, parsea el report (`/var/log/lynis-report.dat`), mapea sus warnings/suggestions a `CheckResult`. Es maduro, mantenido y evita falsos positivos propios.
+1. **Lynis (híbrido):** Lynis está pensado para correr por cron y dejar su report en `/var/log/lynis-report.dat`. WARDEN **auto-parsea ese report si existe** (hardening index, warnings, suggestions → `CheckResult`, con antigüedad; report >30 d degrada un OK a WARN). Sin esperas. `--lynis` **fuerza un run fresco** (`lynis audit system --quiet`, 1-3 min, mejor con root) antes de parsear. Maduro, mantenido, evita falsos positivos propios.
 2. **Checks propios ligeros** (siempre, no dependen de Lynis):
    - **Red / firewall:** puertos a la escucha y binds a `0.0.0.0`; estado de `ufw` / `firewalld`.
    - **SSH:** `PermitRootLogin`, `PasswordAuthentication`, puerto (parseo de `sshd_config`).
