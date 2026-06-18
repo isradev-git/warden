@@ -6,12 +6,11 @@ from dataclasses import asdict
 
 import typer
 
-from warden import __version__
+from warden import SCHEMA_VERSION, __version__
 from warden import render
+from warden.core import report as core_report
 from warden.core import security
 from warden.core import system
-
-SCHEMA_VERSION = "1"
 
 app = typer.Typer(add_completion=False, no_args_is_help=False,
                   help="WARDEN_ — auditor de host y panel de sistemas.  >IZ::")
@@ -20,7 +19,7 @@ app = typer.Typer(add_completion=False, no_args_is_help=False,
 @app.callback(invoke_without_command=True)
 def _default(ctx: typer.Context):
     if ctx.invoked_subcommand is None:
-        _health(watch=False, json_out=False, md=False)
+        render.print_summary(core_report.build())
 
 
 @app.command()
@@ -53,6 +52,24 @@ def audit(
     else:
         render.print_audit(rep)
     raise typer.Exit(_exit_code(rep.worst, fail_on))
+
+
+@app.command()
+def report(
+    json_out: bool = typer.Option(False, "--json", help="Salida JSON versionada para máquina/CI."),
+    md: bool = typer.Option(False, "--md", help="Salida Markdown (vault/informe)."),
+    lynis: bool = typer.Option(False, "--lynis", help="Fuerza un run fresco de Lynis (lento)."),
+):
+    """Informe combinado health + audit."""
+    if json_out and md:
+        raise typer.BadParameter("Usa --json o --md, no ambos.")
+    rep = core_report.build(lynis=lynis)
+    if json_out:
+        print(json.dumps(core_report.to_dict(rep), indent=2, default=str))
+    elif md:
+        print(render.report_md(rep))
+    else:
+        render.print_summary(rep)
 
 
 @app.command()
