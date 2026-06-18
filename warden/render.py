@@ -12,8 +12,12 @@ from rich.text import Text
 
 from warden.console import BG_PANEL, console
 from warden.core import system
+from warden.core import security
 
 LEVEL_STYLE = {"ok": "warden.ok", "warn": "warden.warn", "fail": "warden.fail", "na": "warden.na"}
+STATUS_DOT = {"ok": "●", "warn": "●", "fail": "●", "na": "○"}
+GRADE_STYLE = {"A": "warden.ok", "B": "warden.ok", "C": "warden.warn",
+               "D": "warden.warn", "F": "warden.fail", "—": "warden.na"}
 
 
 def human_bytes(n) -> str:
@@ -189,6 +193,75 @@ def watch_health() -> None:
                 time.sleep(2)
     except KeyboardInterrupt:
         pass
+
+
+def score_bar(score, width: int = 28) -> Text:
+    # score: alto = bueno (inverso a uso de recursos), por eso no reusa pct_bar.
+    lvl = "ok" if score >= 80 else "warn" if score >= 60 else "fail"
+    filled = round(score / 100 * width)
+    t = Text()
+    t.append("█" * filled, style=LEVEL_STYLE[lvl])
+    t.append("░" * (width - filled), style="warden.muted")
+    t.append(f" {score:3d}/100", style=LEVEL_STYLE[lvl])
+    return t
+
+
+def _counts_line(counts: dict) -> Text:
+    t = Text()
+    for st, label in (("ok", "ok"), ("warn", "warn"), ("fail", "fail"), ("na", "n/a")):
+        t.append(f"  {STATUS_DOT[st]} {counts.get(st, 0)} {label}", style=LEVEL_STYLE[st])
+    return t
+
+
+def _score_panel(rep: security.AuditReport) -> Panel:
+    gstyle = GRADE_STYLE.get(rep.grade, "warden.na")
+    g = Table.grid(padding=(0, 3))
+    g.add_column(justify="center")
+    g.add_column()
+    grade = Text(f" {rep.grade} ", style=f"bold reverse {gstyle}")
+    right = Group(score_bar(rep.score), _counts_line(rep.counts))
+    g.add_row(grade, right)
+    priv = "root" if rep.is_root else "usuario (cobertura parcial)"
+    title = f"Hardening · {priv}" + ("  · Lynis" if rep.lynis_used else "")
+    return _panel(g, title)
+
+
+def _checks_table(checks: list[security.CheckResult]) -> Panel:
+    t = Table(expand=True, header_style="warden.header", border_style="warden.accent", box=None)
+    t.add_column("", width=1)
+    t.add_column("Check", style="warden.value", no_wrap=True)
+    t.add_column("Detalle", ratio=1, overflow="fold")
+    for c in checks:
+        dot = Text(STATUS_DOT[c.status], style=LEVEL_STYLE[c.status])
+        detail = c.detail
+        if c.recommendation and c.status in ("warn", "fail"):
+            detail = f"{detail}  → {c.recommendation}"
+        t.add_row(dot, c.name, Text(detail or "—", style="warden.muted"))
+    return _panel(t, "Checks")
+
+
+def audit_renderable(rep: security.AuditReport) -> Group:
+    return Group(_score_panel(rep), _checks_table(rep.checks))
+
+
+def print_audit(rep: security.AuditReport) -> None:
+    console.print(audit_renderable(rep))
+
+
+def audit_md(rep: security.AuditReport) -> str:
+    L = [
+        "# WARDEN_ — Audit", "",
+        f"- **Hardening score:** {rep.score}/100 · **grade {rep.grade}**",
+        f"- **Privilegios:** {'root' if rep.is_root else 'usuario (cobertura parcial)'}",
+        f"- **Lynis:** {'sí' if rep.lynis_used else 'no'}",
+        f"- **Resumen:** {rep.counts['ok']} ok · {rep.counts['warn']} warn · "
+        f"{rep.counts['fail']} fail · {rep.counts['na']} n/a",
+        "", "| | Check | Estado | Detalle | Recomendación |", "|---|---|---|---|---|",
+    ]
+    for c in rep.checks:
+        L.append(f"| {STATUS_DOT[c.status]} | {c.name} | {c.status.upper()} | "
+                 f"{c.detail or '—'} | {c.recommendation or '—'} |")
+    return "\n".join(L)
 
 
 def print_info(si: system.SystemInfo) -> None:

@@ -8,6 +8,7 @@ import typer
 
 from warden import __version__
 from warden import render
+from warden.core import security
 from warden.core import system
 
 SCHEMA_VERSION = "1"
@@ -33,6 +34,28 @@ def health(
 
 
 @app.command()
+def audit(
+    json_out: bool = typer.Option(False, "--json", help="Salida JSON para máquina/CI."),
+    md: bool = typer.Option(False, "--md", help="Salida Markdown."),
+    fail_on: str = typer.Option("warn", "--fail-on", help="Umbral de código !=0: warn|fail."),
+    lynis: bool = typer.Option(False, "--lynis", help="Ejecuta también Lynis (lento, mejor con root)."),
+):
+    """Auditoría de seguridad + hardening score 0-100."""
+    if json_out and md:
+        raise typer.BadParameter("Usa --json o --md, no ambos.")
+    if fail_on not in ("warn", "fail"):
+        raise typer.BadParameter("--fail-on debe ser 'warn' o 'fail'.")
+    rep = security.run_audit(lynis=lynis)
+    if json_out:
+        print(json.dumps(_audit_dict(rep), indent=2, default=str))
+    elif md:
+        print(render.audit_md(rep))
+    else:
+        render.print_audit(rep)
+    raise typer.Exit(_exit_code(rep.worst, fail_on))
+
+
+@app.command()
 def info():
     """Información del sistema / SO."""
     render.print_info(system.collect_system_info())
@@ -44,6 +67,21 @@ def _snap_dict(snap: system.HealthSnapshot) -> dict:
         "schema_version": SCHEMA_VERSION,
         "data": asdict(snap),
     }
+
+
+def _audit_dict(rep: security.AuditReport) -> dict:
+    return {
+        "warden_version": __version__,
+        "schema_version": SCHEMA_VERSION,
+        "data": asdict(rep),
+    }
+
+
+def _exit_code(worst: str, fail_on: str) -> int:
+    sev = {"ok": 0, "warn": 1, "fail": 2}[worst]
+    if fail_on == "fail" and sev == 1:  # los warn no rompen el build
+        return 0
+    return sev
 
 
 def _health(watch: bool, json_out: bool, md: bool) -> None:
