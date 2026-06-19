@@ -17,6 +17,7 @@ from warden.core import scripts as core_scripts
 from warden.core import expose as core_expose
 from warden.core import secrets as core_secrets
 from warden.core import cve as core_cve
+from warden.core import history as core_history
 
 app = typer.Typer(add_completion=False, no_args_is_help=False,
                   help="WARDEN_ — auditor de host y panel de sistemas.  >IZ::")
@@ -25,7 +26,16 @@ app = typer.Typer(add_completion=False, no_args_is_help=False,
 @app.callback(invoke_without_command=True)
 def _default(ctx: typer.Context):
     if ctx.invoked_subcommand is None:
-        render.print_summary(core_report.build())
+        rep = core_report.build()
+        _record_safe(rep)  # el dashboard auto-puebla el histórico
+        render.print_summary(rep)
+
+
+def _record_safe(rep: core_report.FullReport) -> None:
+    try:
+        core_history.record(rep)
+    except Exception:
+        pass  # un fallo de escritura nunca debe romper el dashboard
 
 
 @app.command()
@@ -130,6 +140,27 @@ def cve(
     else:
         render.print_cve(rep)
     raise typer.Exit(1 if rep.vuln_count else 0)  # warn: el match de versión no es exacto
+
+
+@app.command()
+def record():
+    """Registra un snapshot (score + vitales) en el histórico. Para cron."""
+    pt = core_history.record(core_report.build())
+    typer.echo(f"Registrado · score {pt.score} ({pt.grade}) · {pt.ts}")
+
+
+@app.command()
+def history(
+    json_out: bool = typer.Option(False, "--json", help="Salida JSON para máquina/CI."),
+    limit: int = typer.Option(30, "--limit", help="Nº de registros recientes a mostrar."),
+):
+    """Tendencias del histórico (score y vitales en el tiempo)."""
+    pts = core_history.load(limit=limit)
+    if json_out:
+        print(json.dumps({"warden_version": __version__, "schema_version": SCHEMA_VERSION,
+                          "data": [asdict(p) for p in pts]}, indent=2, default=str))
+    else:
+        render.print_history(pts)
 
 
 @app.command()

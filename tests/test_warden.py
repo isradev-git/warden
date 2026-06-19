@@ -1,5 +1,6 @@
 """Self-check fase 0. Corre con `pytest` o `python tests/test_warden.py`."""
 import json
+import os
 
 from dataclasses import asdict
 
@@ -8,6 +9,7 @@ from warden.cli import _audit_dict, _exit_code, _snap_dict
 from warden.core import report as core_report
 from warden.core import cve as core_cve
 from warden.core import expose as core_expose
+from warden.core import history as core_history
 from warden.core import scripts as core_scripts
 from warden.core import secrets as core_secrets
 from warden.core import security, system
@@ -154,6 +156,26 @@ def test_cve_severity_and_shape():
     rep = core_cve.CveReport("Debian", 1, [core_cve.PkgVulns(
         "openssl", "1.1", [core_cve.Vuln("OSV-1", ["CVE-2020-1"], "x", "HIGH")])], 1)
     json.dumps(asdict(rep), default=str)  # no debe lanzar
+
+
+def test_sparkline():
+    assert render.sparkline([0, 100]) == "▁█"
+    assert render.sparkline([None]) == " "
+    assert len(render.sparkline([10, 20, 30])) == 3
+
+
+def test_history_record_load(tmp_path=None):
+    import tempfile
+    p = os.path.join(tempfile.mkdtemp(), "h.jsonl")
+    rep = core_report.build(lynis=False)
+    pt = core_history.record(rep, path=p)
+    assert pt.score == rep.audit.score
+    pts = core_history.load(path=p)
+    assert len(pts) == 1 and pts[0].grade == rep.audit.grade
+    with open(p, "a") as f:
+        f.write("linea corrupta\n")
+    assert len(core_history.load(path=p)) == 1  # corrupta ignorada
+    json.dumps([asdict(x) for x in pts], default=str)
 
 
 if __name__ == "__main__":
