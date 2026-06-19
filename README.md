@@ -2,8 +2,8 @@
 
 # `WARDEN_`
 
-**Auditor de host y panel de sistemas para la terminal.**
-Diagnóstico en vivo · auditoría de seguridad · todo desde la línea de comandos.
+**Auditoría de seguridad y diagnóstico de host, todo en la terminal.**
+Hardening score · CVEs de tus paquetes · OSINT de exposición · salida lista para CI.
 
 ![Python](https://img.shields.io/badge/python-3.11+-3dffd1?style=flat-square&logo=python&logoColor=white&labelColor=15090f)
 ![Platform](https://img.shields.io/badge/Linux-first-ff3d94?style=flat-square&logo=linux&logoColor=white&labelColor=15090f)
@@ -21,7 +21,7 @@ Diagnóstico en vivo · auditoría de seguridad · todo desde la línea de coman
 ![warden dashboard](docs/dashboard.svg)
 
 <details>
-<summary><b>Más capturas</b> — <code>warden health</code> · <code>warden audit</code> · <code>warden cve</code> · <code>warden script</code></summary>
+<summary><b>Más capturas</b> — <code>health</code> · <code>audit</code> · <code>cve</code> · <code>history</code> · <code>script</code></summary>
 
 ![warden health](docs/health.svg)
 
@@ -37,25 +37,68 @@ Diagnóstico en vivo · auditoría de seguridad · todo desde la línea de coman
 
 </div>
 
-## Qué es
+## Por qué
 
-`WARDEN_` es la herramienta de cabecera del técnico de sistemas: un solo comando
-que te dice **cómo está la máquina** (CPU, RAM, discos, red, temperaturas,
-procesos) y **cómo de segura es** (auditoría de hardening del host local).
+Revisar el estado y la seguridad de una máquina Linux significa saltar entre
+`htop`, `df`, `ss`, `lynis`, grepear configs de SSH y buscar CVEs de paquetes a
+mano. `WARDEN_` reúne todo eso en **un solo comando**: salida visual para
+humanos y `--json` estable para máquinas, con **códigos de salida pensados para
+CI/cron**. Herramienta de cabecera para técnico de sistemas, pensada para vivir
+en la terminal.
 
-Pensado para vivir en la terminal: cada función es un subcomando *scriptable* y
-*cron-able*, con salida visual (`rich`) para humanos y `--json` estable para
-máquinas y CI. El núcleo de lógica es independiente del front-end — datos
-estructurados que se pintan después.
+Linux primero. Cubre el **host local**; para la red, su pareja es `LuaNetSentinel`.
 
-Cubre el **host local**. Para la red, su pareja es `LuaNetSentinel`.
+## Qué responde, de un vistazo
+
+| Pregunta | Comando |
+|---|---|
+| ¿Cómo está la máquina **ahora**? | `warden` · `warden health` |
+| ¿Cómo de **endurecida** está? | `warden audit` → score `0-100` + grade `A-F` |
+| ¿Tengo paquetes con **CVE conocida**? | `warden cve` (vía OSV.dev) |
+| ¿Qué **expongo** a internet? | `warden expose` (IP, geoloc, puertos públicos) |
+| ¿Hay **secretos filtrados** en el sistema? | `warden scan-secrets` |
+| ¿Estoy **mejorando o empeorando** con el tiempo? | `warden history` (tendencias) |
+
+## Capacidades
+
+**Diagnóstico** — CPU (global/por-core/load), RAM + swap, discos, red,
+temperaturas y top de procesos vía `psutil`. Modo `--watch` en vivo. Dato no
+legible → `N/A`, nunca *traceback*.
+
+**Seguridad** — auditoría de hardening con **checks propios** (firewall, SSH,
+permisos sensibles, UID 0, actualizaciones, cifrado de disco, puertos a la
+escucha) **+ wrapper de Lynis**, condensada en un **hardening score 0-100 + grade
+A-F**. CVEs de paquetes instalados vía **OSV.dev**, OSINT de **auto-exposición** y
+**secret-leak scan** (env, history, ficheros legibles por otros).
+
+**Automatización** — todo subcomando es *scriptable* y *cron-able*, con `--json`
+**versionado** (`schema_version`) y **códigos de salida `0/1/2`** + `--fail-on`
+para usar `audit` como gate de CI. Histórico append-only con sparklines de
+tendencia. Generación de scripts (backup/cleanup/update) que **WARDEN no
+ejecuta**: tú revisas y corres.
+
+## En CI y cron
+
+```bash
+# Gate de seguridad en CI: rompe el build solo si hay un FAIL
+warden audit --fail-on fail
+
+# Snapshot diario para tendencias (crontab -e)
+0 9 * * *   warden record
+
+# Inventario de CVEs a JSON para tu pipeline
+warden cve --json > cves.json
+```
+
+Códigos de salida: `0` todo OK · `1` hubo WARN · `2` hubo FAIL. `--fail-on`
+decide el umbral.
 
 ## Instalación
 
 ```bash
-pipx install git+<url-del-repo>     # aislado, por-usuario
+pipx install git+https://github.com/isradev-git/warden.git   # aislado, por-usuario
 # o, para desarrollo:
-git clone <url-del-repo> && cd warden
+git clone https://github.com/isradev-git/warden.git && cd warden
 python -m venv .venv && . .venv/bin/activate
 pip install -e .
 ```
@@ -65,87 +108,45 @@ Requiere **Python 3.11+**. Linux primero (macOS/Windows degradan a `N/A`, no rev
 ## Uso
 
 ```bash
-warden                      # dashboard: hardening score + vitales + incidencias
-warden health              # diagnóstico completo (CPU/RAM/discos/red/temps/procesos)
-warden health --watch      # refresco en vivo cada 2 s (Ctrl-C para salir)
-warden health --json       # salida JSON versionada (para CI / automatización)
-warden health --md         # salida Markdown (para tu vault / informes)
-warden info                # información del SO / sistema
-
-warden audit               # auditoría de seguridad + hardening score 0-100
-warden audit --json        # salida JSON versionada (para CI)
-warden audit --md          # salida Markdown
-warden audit --fail-on fail # en CI: solo los FAIL devuelven código !=0
-warden audit --lynis       # fuerza un run fresco de Lynis (lento, mejor con root)
-
-warden report              # informe combinado health + audit (= dashboard)
-warden report --json       # un único JSON versionado con health + audit
-warden report --md         # informe Markdown completo para tu vault
-
-warden expose              # OSINT: IP pública, geoloc, reverse DNS, puertos públicos
-warden expose --json       # salida JSON
-
-warden scan-secrets        # busca secretos en env, history y ficheros sensibles
-warden scan-secrets --json # salida JSON (exit 1 si warn, 2 si fail)
-
-warden cve                 # CVEs conocidas de paquetes instalados (vía OSV.dev)
-warden cve --json          # listado completo en JSON
-warden cve --details 20    # enriquece 20 vulns con resumen/severidad (lento)
-
-warden record              # registra un snapshot en el histórico (para cron)
-warden history             # tendencias: score y vitales en el tiempo (sparklines)
-warden history --json      # histórico en JSON
-
-warden script backup --src /datos --dest /backup   # genera el script (NO lo ejecuta)
-warden script cleanup -o limpiar.sh                # lo escribe a fichero
-warden script update                               # lo muestra resaltado en pantalla
+warden                       # dashboard: hardening score + vitales + incidencias
+warden health [--watch]      # diagnóstico (CPU/RAM/discos/red/temps/procesos)
+warden audit  [--fail-on …]  # auditoría de seguridad + hardening score 0-100
+warden cve    [--details N]  # CVEs de paquetes instalados (OSV.dev)
+warden expose                # OSINT: IP pública, geoloc, reverse DNS, puertos públicos
+warden scan-secrets          # secretos en env, history y ficheros sensibles
+warden record / history      # snapshot + tendencias (sparklines de score y vitales)
+warden script <backup|cleanup|update> [--src --dest] [-o FILE]   # genera, NO ejecuta
+warden report                # informe combinado health + audit
+warden info                  # información del SO / sistema
 ```
 
-Los comandos respetan **códigos de salida** (`0` ok · `1` warn · `2` fail), así
-que `warden audit --fail-on warn` es usable directamente en un pipeline de CI.
-
-## Características
-
-| | Estado |
-|---|---|
-| Diagnóstico en vivo (CPU/RAM/swap/discos/red/temps/procesos) | ✅ |
-| Dashboard con tema *Glitchbane* (`rich`) | ✅ |
-| Salida `--json` versionada (`schema_version`) + `--md` | ✅ |
-| Detección de privilegios (root) | ✅ |
-| Degradación a `N/A` cuando un dato no es legible (nunca *traceback*) | ✅ |
-| Auditoría de seguridad (checks propios + wrapper de Lynis) | ✅ |
-| Hardening score `0-100` + grade `A-F` | ✅ |
-| Códigos de salida `0/1/2` + `--fail-on` para CI | ✅ |
-| Dashboard de resumen (`warden` sin args): score + vitales + incidencias | ✅ |
-| Informe combinado health + audit (`report`, JSON/Markdown versionado) | ✅ |
-| OSINT: self-exposure (IP pública, geoloc, reverse DNS, puertos públicos) | ✅ |
-| Secret leak scan (env, history, ficheros world-readable) | ✅ |
-| Generación de scripts (backup / cleanup / update, solo genera) | ✅ |
-| CVE de paquetes instalados vía OSV.dev (`cve`) | ✅ |
-| Histórico + tendencias (`record`/`history`, sparklines de score y vitales) | ✅ |
+Casi todos aceptan `--json` (máquina/CI) y `--md` (vault/informes), ambos versionados.
 
 ## Arquitectura
 
 ```
 warden/
-  cli.py               # typer: subcomandos
+  cli.py               # typer: subcomandos (front-end fino)
   console.py           # Console rich + tema Glitchbane
   platform_utils.py    # SO + privilegios
-  core/                # ← solo datos, sin rich/typer (testeable)
-    system.py          #   collectors psutil -> dataclasses
-    security.py        #   checks propios + Lynis -> CheckResult + score
-    report.py          #   combina health + audit -> dataclass + JSON
-    scripts.py         #   genera scripts bash (backup/cleanup/update), NO ejecuta
-    expose.py          #   OSINT self-exposure (IP pública, geoloc, puertos)
-    secrets.py         #   secret leak scan (env, history, ficheros sensibles)
-    cve.py             #   CVE de paquetes instalados vía OSV.dev (urllib)
-    history.py         #   snapshots append-only (JSONL) -> tendencias
-  render.py            # render rich de los datos
+  core/                # ← solo datos, sin rich/typer (testeable de forma aislada)
+    system.py    security.py    report.py    cve.py
+    expose.py    secrets.py     scripts.py   history.py
+  render.py            # toda la presentación rich vive aquí
 ```
 
-**Regla de oro:** `core/` devuelve datos estructurados sin saber nada de
-`rich`/`typer`. Testeable de forma aislada y deja la puerta abierta a una TUI
-encima sin tocar la lógica.
+**Regla de oro:** `core/` devuelve dataclasses sin saber nada de `rich`/`typer`.
+La presentación se aísla en `render.py` y el CLI es una capa fina. Resultado:
+lógica testeable y salida (terminal / JSON / Markdown) intercambiable.
+
+## Decisiones de diseño
+
+- **Degrada, no revienta** — sin permiso/sensor/herramienta → `N/A`, nunca un *traceback*.
+- **Envuelve Lynis** en vez de reinventar la auditoría; checks propios solo para lo barato y portable.
+- **CVEs vía OSV.dev** (consulta batch) — sin base de datos local que mantener.
+- **JSON versionado** (`schema_version`) para no romper integraciones al evolucionar.
+- **Genera scripts, no los ejecuta** — el riesgo de tocar el sistema queda en manos del usuario.
+- **Privilegios siempre explícitos** — si no es root, la salida dice qué cobertura es parcial.
 
 ## Desarrollo
 
@@ -156,17 +157,9 @@ python tests/test_warden.py     # self-check (o: pytest)
 
 ## Stack
 
-`python>=3.11` · `psutil` · `rich` · `typer` · `distro`
+`python>=3.11` · `psutil` · `rich` · `typer` · `distro` · OSINT/CVE vía `urllib` (stdlib)
 
-## Roadmap
-
-- **Fase 0** — diagnóstico (`health`/`info`), tema, privilegios. ✅
-- **Fase 1** — `audit`: checks propios + wrapper de Lynis + hardening score. ✅
-- **Fase 2** — `report` combinado (JSON/MD) + dashboard de resumen. ✅
-- **Fase 3** — `script` (generación) + OSINT (`expose`, `scan-secrets`). ✅
-- **Fase 4** — CVE de paquetes vía OSV.dev (`cve`) ✅ · histórico/tendencias (`record`/`history`) ✅.
-
-WARDEN_ es **solo terminal + `rich`** por diseño: sin binario/instalador, sin TUI, sin soporte real de otros SO (Linux primero; el resto degrada a `N/A`). El proyecto está completo para su alcance.
+Por diseño, `WARDEN_` es **solo terminal + `rich`**: sin binario, sin TUI, Linux primero.
 
 ---
 
