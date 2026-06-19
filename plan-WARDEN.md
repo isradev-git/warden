@@ -94,6 +94,8 @@ Notas de diseño:
 | `warden scan-secrets [--json]` | Busca tokens/keys en env, history y ficheros world-readable. |
 | `warden script <backup\|cleanup\|update> [--src --dest] [-o FILE]` | **Genera y muestra** un script. `-o` lo escribe a fichero. No lo ejecuta. |
 | `warden cve [--json] [--details N]` | CVEs conocidas de los paquetes instalados vía OSV.dev. |
+| `warden record` | Registra un snapshot (score + vitales) en el histórico. Cron-able. |
+| `warden history [--json] [--limit N]` | Tendencias del histórico (score y vitales en el tiempo). |
 | `warden report [--md\|--json]` | Informe combinado health + audit. |
 | `warden info` | Información del sistema / SO. |
 
@@ -169,7 +171,7 @@ Tras los recortes, el riesgo grande (ejecutar/programar) desaparece. Queda:
 | **Fase 1** ✅ | `security.py`: checks propios ligeros + wrapper de Lynis (`--lynis`) + comando `audit` + códigos de salida `0/1/2` + `--fail-on` + **hardening score 0-100 + grade A-F**. *Hecho y verificado.* |
 | **Fase 2** ✅ | `core/report.py` (combina health + audit) + comando `report` (JSON/MD versionado) + `warden` sin-args = dashboard de resumen (score + vitales + incidencias). *Hecho y verificado.* |
 | **Fase 3** ✅ | `scripts.py`: generación de backup/cleanup/update (solo genera, no ejecuta). **OSINT:** `expose` (IP pública + geoloc + reverse DNS + puertos en iface pública) + `scan-secrets` (env, history, ficheros world-readable). *Hecho y verificado.* |
-| **Fase 4** *(opcional, lo recortado)* | **CVE de paquetes (OSV.dev)** ✅ — `cve` enumera paquetes (dpkg/rpm/pacman) y los consulta en batch contra api.osv.dev. *Pendiente:* 2.º SO (macOS/Windows), ejecución/programación de scripts, histórico/tendencias, binario `pyinstaller`, TUI Textual, config TOML. |
+| **Fase 4** *(opcional, lo recortado)* | **CVE de paquetes (OSV.dev)** ✅ — `cve` enumera paquetes (dpkg/rpm/pacman) y los consulta en batch contra api.osv.dev. **Histórico/tendencias** ✅ — `record` añade un snapshot (JSONL en `XDG_DATA_HOME`), `history` muestra sparklines de score y vitales; el dashboard auto-registra. *Pendiente:* 2.º SO (macOS/Windows), ejecución/programación de scripts, binario `pyinstaller`, TUI Textual, config TOML. |
 
 ---
 

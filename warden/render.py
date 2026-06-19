@@ -19,6 +19,7 @@ from warden.core import scripts as core_scripts
 from warden.core import expose as core_expose
 from warden.core import secrets as core_secrets
 from warden.core import cve as core_cve
+from warden.core import history as core_history
 
 LEVEL_STYLE = {"ok": "warden.ok", "warn": "warden.warn", "fail": "warden.fail", "na": "warden.na"}
 STATUS_DOT = {"ok": "●", "warn": "●", "fail": "●", "na": "○"}
@@ -423,6 +424,86 @@ def cve_renderable(rep: core_cve.CveReport) -> Panel:
 
 def print_cve(rep: core_cve.CveReport) -> None:
     console.print(cve_renderable(rep))
+
+
+_SPARK = "▁▂▃▄▅▆▇█"
+
+
+def sparkline(values, lo: float = 0.0, hi: float = 100.0) -> str:
+    out = []
+    span = hi - lo
+    for v in values:
+        if v is None:
+            out.append(" ")
+            continue
+        frac = 0.0 if span <= 0 else (v - lo) / span
+        idx = min(len(_SPARK) - 1, max(0, round(frac * (len(_SPARK) - 1))))
+        out.append(_SPARK[idx])
+    return "".join(out)
+
+
+def _short_ts(ts: str) -> str:
+    # "2026-06-18T14:30:05" -> "06-18 14:30"
+    return ts[5:16].replace("T", " ") if len(ts) >= 16 else ts
+
+
+def _delta(cur, base, good_up: bool) -> Text:
+    if cur is None or base is None:
+        return Text("—", style="warden.muted")
+    d = cur - base
+    if round(d) == 0:
+        return Text("·", style="warden.muted")  # sin cambio
+    arrow = "↑" if d > 0 else "↓"
+    good = (d > 0) == good_up
+    return Text(f"{arrow}{abs(round(d))}", style="warden.ok" if good else "warden.fail")
+
+
+def history_renderable(points: list[core_history.HistoryPoint]) -> Panel:
+    if not points:
+        return _panel(Text("Sin histórico todavía — corre `warden record` "
+                           "(o ponlo en cron) para acumular tendencias.", style="warden.warn"),
+                      "Histórico")
+    first, last = points[0], points[-1]
+    sub = Text(f"{len(points)} registros · {_short_ts(first.ts)} → {_short_ts(last.ts)}",
+               style="warden.muted")
+    if len(points) < 2:
+        return _panel(Group(Text("Solo 1 registro; corre `warden record` más veces "
+                                 "para ver tendencias.", style="warden.muted"), sub), "Histórico")
+
+    g = Table.grid(padding=(0, 1))
+    g.add_column(style="warden.muted", justify="right")
+    g.add_column(no_wrap=True)            # sparkline
+    g.add_column(justify="right")          # valor actual
+    g.add_column(justify="right")          # delta vs primero
+    metrics = [
+        ("score", "score", "warden.value", True),
+        ("cpu", "cpu", "warden.accent2", False),
+        ("ram", "ram", "warden.accent2", False),
+        ("disk", "disco", "warden.accent2", False),
+    ]
+    for attr, label, style, good_up in metrics:
+        series = [getattr(p, attr) for p in points]
+        cur = series[-1]
+        g.add_row(label, Text(sparkline(series), style=style),
+                  Text("—" if cur is None else f"{cur:.0f}", style=style),
+                  _delta(cur, series[0], good_up))
+
+    t = Table(expand=True, header_style="warden.header", box=None, pad_edge=False)
+    t.add_column("Fecha", style="warden.muted", no_wrap=True)
+    t.add_column("Score", justify="right")
+    t.add_column("Grade", justify="center")
+    for col in ("cpu", "ram", "swap", "disco"):
+        t.add_column(col, justify="right", style="warden.muted")
+    for p in points[-8:]:
+        t.add_row(_short_ts(p.ts),
+                  Text(str(p.score), style=LEVEL_STYLE["ok" if p.score >= 80 else "warn" if p.score >= 60 else "fail"]),
+                  Text(p.grade, style=GRADE_STYLE.get(p.grade, "warden.na")),
+                  *[("—" if v is None else f"{v:.0f}") for v in (p.cpu, p.ram, p.swap, p.disk)])
+    return _panel(Group(g, Text(""), t, sub), f"Histórico ({len(points)})")
+
+
+def print_history(points: list[core_history.HistoryPoint]) -> None:
+    console.print(history_renderable(points))
 
 
 def print_info(si: system.SystemInfo) -> None:

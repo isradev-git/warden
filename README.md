@@ -29,6 +29,8 @@ Diagnóstico en vivo · auditoría de seguridad · todo desde la línea de coman
 
 ![warden cve](docs/cve.svg)
 
+![warden history](docs/history.svg)
+
 ![warden script](docs/script.svg)
 
 </details>
@@ -90,6 +92,10 @@ warden cve                 # CVEs conocidas de paquetes instalados (vía OSV.dev
 warden cve --json          # listado completo en JSON
 warden cve --details 20    # enriquece 20 vulns con resumen/severidad (lento)
 
+warden record              # registra un snapshot en el histórico (para cron)
+warden history             # tendencias: score y vitales en el tiempo (sparklines)
+warden history --json      # histórico en JSON
+
 warden script backup --src /datos --dest /backup   # genera el script (NO lo ejecuta)
 warden script cleanup -o limpiar.sh                # lo escribe a fichero
 warden script update                               # lo muestra resaltado en pantalla
@@ -116,6 +122,7 @@ que `warden audit --fail-on warn` es usable directamente en un pipeline de CI.
 | Secret leak scan (env, history, ficheros world-readable) | ✅ |
 | Generación de scripts (backup / cleanup / update, solo genera) | ✅ |
 | CVE de paquetes instalados vía OSV.dev (`cve`) | ✅ |
+| Histórico + tendencias (`record`/`history`, sparklines de score y vitales) | ✅ |
 
 ## Arquitectura
 
@@ -132,6 +139,7 @@ warden/
     expose.py          #   OSINT self-exposure (IP pública, geoloc, puertos)
     secrets.py         #   secret leak scan (env, history, ficheros sensibles)
     cve.py             #   CVE de paquetes instalados vía OSV.dev (urllib)
+    history.py         #   snapshots append-only (JSONL) -> tendencias
   render.py            # render rich de los datos
 ```
 
@@ -156,7 +164,7 @@ python tests/test_warden.py     # self-check (o: pytest)
 - **Fase 1** — `audit`: checks propios + wrapper de Lynis + hardening score. ✅
 - **Fase 2** — `report` combinado (JSON/MD) + dashboard de resumen. ✅
 - **Fase 3** — `script` (generación) + OSINT (`expose`, `scan-secrets`). ✅
-- **Fase 4** — CVE de paquetes vía OSV.dev (`cve`). ✅ · *pendiente (opcional):* histórico/tendencias, binario `pyinstaller`, TUI, 2.º SO.
+- **Fase 4** — CVE de paquetes vía OSV.dev (`cve`) ✅ · histórico/tendencias (`record`/`history`) ✅ · *pendiente (opcional):* binario `pyinstaller`, TUI, 2.º SO.
 
 ---
 
