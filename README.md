@@ -7,7 +7,7 @@ Diagnóstico en vivo · auditoría de seguridad · todo desde la línea de coman
 
 ![Python](https://img.shields.io/badge/python-3.11+-3dffd1?style=flat-square&logo=python&logoColor=white&labelColor=15090f)
 ![Platform](https://img.shields.io/badge/Linux-first-ff3d94?style=flat-square&logo=linux&logoColor=white&labelColor=15090f)
-![Status](https://img.shields.io/badge/estado-fase_4-ff3d94?style=flat-square&labelColor=15090f)
+![Status](https://img.shields.io/badge/estado-estable-3dffd1?style=flat-square&labelColor=15090f)
 ![License](https://img.shields.io/badge/licencia-MIT-3dffd1?style=flat-square&labelColor=15090f)
 
 `>IZ::` · Israel Zamora Tejero · *Glitchbane*
@@ -164,7 +164,9 @@ python tests/test_warden.py     # self-check (o: pytest)
 - **Fase 1** — `audit`: checks propios + wrapper de Lynis + hardening score. ✅
 - **Fase 2** — `report` combinado (JSON/MD) + dashboard de resumen. ✅
 - **Fase 3** — `script` (generación) + OSINT (`expose`, `scan-secrets`). ✅
-- **Fase 4** — CVE de paquetes vía OSV.dev (`cve`) ✅ · histórico/tendencias (`record`/`history`) ✅ · *pendiente (opcional):* binario `pyinstaller`, TUI, 2.º SO.
+- **Fase 4** — CVE de paquetes vía OSV.dev (`cve`) ✅ · histórico/tendencias (`record`/`history`) ✅.
+
+WARDEN_ es **solo terminal + `rich`** por diseño: sin binario/instalador, sin TUI, sin soporte real de otros SO (Linux primero; el resto degrada a `N/A`). El proyecto está completo para su alcance.
 
 ---
 
